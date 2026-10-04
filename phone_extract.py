@@ -329,17 +329,24 @@ def _is_person_name(name: str) -> bool:
 
 
 def extract_source_person(lines) -> tuple[str, str]:
-    """线索人 = 发消息的人。
+    """整篇文本里最靠前的那个**发布人**（一对一的兜底）。
 
-    群聊截图里的发送者通常长这样：
-        「彭曦（AAa琉璃瓦老彭）」      <- 昵称(备注)
-        「彭曦（AAa琉璃瓦老彭）：」     <- 引用块里的发送者标记，最可信
-    优先取带冒号的那种；开头的 @ 行是「提到别人」，不算发送者。
+    发布人一定是运营，所以先认「行首就是运营名」的行 —— 这一条能覆盖
+    「彭曦」这种光秃秃的昵称（旧规则只认「昵称(备注)」和「昵称:」，
+    会把它们整批漏掉，最后只能退回「按平台推」，多运营的图就全挂一个人头上）。
+
+    认不到再去认「昵称(备注)」这类形态 —— 哪怕名字不在名单里也返回，
+    这样调用方能给用户一句「XX 不在运营名单」的提示。
     """
     if isinstance(lines, str):
         lines = to_lines(lines)
 
-    noted: list[tuple[bool, str]] = []
+    for ln in lines:                      # ① 行首就是运营名（最可靠）
+        name = _operator_at(ln)
+        if name:
+            return name, "发布人行"
+
+    noted: list[tuple[bool, str]] = []    # ② 旧规则兜底（为了那条「不在名单」提示）
     for ln in lines:
         m = _SOURCE_WITH_NOTE_RE.match(ln)
         if not m:
@@ -423,63 +430,107 @@ def _trusted_operator(name: str) -> tuple[str, str]:
     return "", f"「{name}」不在运营名单"
 
 
+def _operator_at(line: str) -> str:
+    """这一行**行首**的运营名 —— 判断「发布人行」的核心依据。
+
+    为什么以行首为准：发布人一定是那 6 位运营之一，所以「行首就是某个运营名」
+    是最可靠的信号。它能一次覆盖 OCR 的多种输出形态：
+
+        彭曦                    ← 群里光秃秃的昵称（**最容易被漏掉的一种**）
+        2 彭曦                  ← OCR 把头像旁的楼层序号混进来了
+        彭曦（AAa琉璃瓦老彭）      ← 昵称(备注)
+        彭曦：                   ← 引用块发送者
+        彭曦（AAa琉璃瓦老彭）正文… ← 昵称和正文被 OCR 连成了一行
+
+    以 ``@`` 开头的行是「提到别人」，不算发布人，直接排除。
+    """
+    text = (line or "").strip()
+    if not text or text.startswith("@"):
+        return ""
+    try:
+        import roster
+        names = roster.operator_names()
+    except Exception:
+        return ""
+
+    lead = _LEADING_INDEX_RE.sub("", text).lstrip("@ 　")   # 先剥掉头像旁的楼层序号
+    for name in names:
+        if lead.startswith(name):
+            return name
+    # OCR 错字兜底：行首取同样长度，差一个字也能纠正（壹曦 -> 彭曦）
+    for name in names:
+        seg = lead[:len(name)]
+        if len(seg) != len(name):
+            continue
+        fixed, _note = roster.check_source_person(seg)
+        if fixed and roster.is_operator(fixed):
+            return fixed
+    return ""
+
+
 def _person_for_line(lines: list[str], idx: int) -> tuple[str, str]:
     """给第 idx 行的号码找它的**发布人**（线索人）。
 
-    这就是「联系方式必须和发布人对应得上」的落地方式：
-    每个号码各自往上找自己的发布人行，而不是整张图共用一个。
+    这就是「联系方式必须和发布人对应得上」的落地方式：每个号码各自往上找
+    自己的发布人行，而不是整张图共用一个。
 
-    * 本行 → 向上最多 4 行；**撞见别的号码行就停**（说明已经跨到另一位发布人）
-    * 候选必须通过运营名单校验，否则不算（避免把评论者昵称当发布人）
-    * 带冒号的「彭曦（AAa琉璃瓦老彭）：」是引用块发送者，最可信，直接采纳
+    微信里「一条消息 = 发布人行 + 正文（+ 被 @ 的人）」，所以直接找
+    **上面最近的那个发布人行**就够了 —— 比按行回溯更贴合实际结构，
+    也不会因为中间隔了几行就把人认错。
     """
-    try:
-        import roster
-    except Exception:
-        return "", ""
-
-    fallback: tuple[str, str] | None = None
-    for j in range(idx, max(-1, idx - 5), -1):
-        if j != idx and extract_phones(lines[j]):
-            break
-        cand = lines[j]
-        m = _SOURCE_WITH_NOTE_RE.match(cand)
-        has_colon = cand.rstrip().endswith(":")
-        if not m:
-            m = _SOURCE_BARE_RE.match(cand)
-            if not m:
-                continue
-        name = _clean_id(m.group(1))
-        if not _is_person_name(name):
-            continue
-        fixed, _note = roster.check_source_person(name)     # 名单闸门 + 错字纠正
-        if not fixed or not roster.is_operator(fixed):      # 必须是运营，业务也不行
-            continue
-        src = "引用块发送者" if has_colon else "昵称(备注)"
-        if has_colon:
-            return fixed, src
-        if fallback is None:
-            fallback = (fixed, src)
-    return fallback or ("", "")
+    for j in range(idx, -1, -1):
+        name = _operator_at(lines[j])
+        if name:
+            return name, ("本行发布人" if j == idx else f"上方第 {idx - j} 行的发布人")
+    return "", ""
 
 
 def _business_for_line(lines: list[str], idx: int) -> str:
     """给第 idx 行找它对应的业务（被 @ 的人）。
 
-    微信里 @ 常常写在正文**下面**一行，所以看本行 + 往后 2 行。
-    找不到就返回空串，由调用方回退到整图扫描的结果。
+    @ 常写在正文**下面**一行，也可能同行、或是引用式写在上面。
+    关键是**只在同一条消息（同一个发布人块）里找** —— 一旦越过下一条消息，
+    就会把别人的 @ 认成自己的，这正是「多运营 + 各 @ 不同人」最容易错的地方。
+
+    顺序：先看本行及下方，再退回上方。找不到就返回空串，
+    由调用方回退到整图扫描的结果。
     """
     try:
         import roster
     except Exception:
         return ""
-    for ln in lines[idx: idx + 3]:
-        if not _AT_PERSON_RE.search(ln):
-            continue
-        names = roster.scan_sales(ln)
-        if names:
-            return ",".join(roster.order_responsibles(roster.with_mentor(names)))
+
+    start, end = _block_range(lines, idx)
+    for rng in (range(idx, min(end, idx + 5)),
+                range(idx - 1, start - 1, -1)):
+        for j in rng:
+            ln = lines[j]
+            if not _AT_PERSON_RE.search(ln):
+                continue
+            names = roster.scan_sales(ln)
+            if names:
+                return ",".join(roster.order_responsibles(roster.with_mentor(names)))
     return ""
+
+
+def _block_range(lines: list[str], idx: int) -> tuple[int, int]:
+    """第 idx 行所在「消息块」的范围 ``[start, end)``。
+
+    一条微信消息 = 发布人行 + 正文（+ 被 @ 的人），到下一条消息的发布人行为止。
+    同一个块里的东西才是互相归属的 —— 这是「联系方式 / 线索人 / 业务」
+    三者不出错的结构保证。
+    """
+    start = 0
+    for j in range(idx, -1, -1):
+        if _operator_at(lines[j]):
+            start = j
+            break
+    end = len(lines)
+    for j in range(idx + 1, len(lines)):
+        if _operator_at(lines[j]):
+            end = j
+            break
+    return start, end
 
 
 def _platform_warn(person: str, source_platform: str) -> str:

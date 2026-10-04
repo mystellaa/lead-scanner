@@ -89,6 +89,8 @@ class LeadScannerApp(tk.Tk):
         self.bind("<Control-v>", self._paste_image)
         self.bind("<Control-V>", self._paste_image)
 
+        self._install_shortcuts()          # Enter = 开始识别，T = 清空面板
+
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     # ============================================================ 样式
@@ -257,11 +259,11 @@ class LeadScannerApp(tk.Tk):
         box.grid(row=row, column=0, sticky="ew", padx=10, pady=5)
         box.columnconfigure(3, weight=1)
 
-        self.btn_start = ttk.Button(box, text="▶  开始识别", style="Primary.TButton",
+        self.btn_start = ttk.Button(box, text="▶  开始识别 (Enter)", style="Primary.TButton",
                                     command=self._start_scan)
         self.btn_start.grid(row=0, column=0, sticky="w")
 
-        # 模式开关：勾上 = 本批只进临时区，不写总库
+        # 模式开关：勾上 = 列表只看本批（线索照样写入总库）
         self.temp_var = tk.BooleanVar(value=self.temp_mode)
         self.temp_check = tk.Checkbutton(
             box, text="临时模式（只看本批）", variable=self.temp_var,
@@ -294,8 +296,8 @@ class LeadScannerApp(tk.Tk):
         ttk.Button(bar, text="补全线索人",
                    command=self._fill_person_by_source).pack(side="left", padx=4)
         ttk.Separator(bar, orient="vertical").pack(side="left", fill="y", padx=4, pady=1)
-        self.btn_clear_batch = ttk.Button(bar, text="清空本批",
-                                          command=self._clear_batch)
+        self.btn_clear_batch = ttk.Button(bar, text="清空面板 (T)",
+                                          command=self._reset_panel)
         self.btn_clear_batch.pack(side="left", padx=4)
         ttk.Button(bar, text="复制本批",
                    command=self._copy_batch).pack(side="left", padx=4)
@@ -1198,15 +1200,16 @@ class LeadScannerApp(tk.Tk):
 
     # ============================================================ 模式 / 剪贴板
     def _update_mode_state(self) -> None:
-        """按当前模式刷新标题、按钮可用性和提示语。"""
+        """按当前模式刷新标题和提示语。
+
+        「清空面板」按钮始终可用 —— 它只清显示，不删总库里的任何数据。
+        """
         if self.temp_mode:
             self.result_box.configure(
                 text=" ④ 识别结果 · 临时模式（只显示本批，数据照常入库） ")
-            self.btn_clear_batch.configure(state="normal")
-            self.result_hint.configure(text="复制走再清空，开始下一批")
+            self.result_hint.configure(text="复制走，按 T 清空面板开始下一批")
         else:
             self.result_box.configure(text=" ④ 识别结果 · 总库（双击单元格可修改） ")
-            self.btn_clear_batch.configure(state="disabled")
             self.result_hint.configure(text="")
 
     def _toggle_temp_mode(self) -> None:
@@ -1244,27 +1247,70 @@ class LeadScannerApp(tk.Tk):
             rows = [t for t in rows if t[0] in sel]
         return [rec for _, rec in rows]
 
-    def _clear_batch(self) -> None:
-        """清空本批**列表**，准备复制下一批。
+    # ============================================================ 快捷键
+    def _install_shortcuts(self) -> None:
+        """装窗口级快捷键：Enter = 开始识别，T = 清空面板。
 
-        注意：只清显示，不删数据 —— 线索早就写进总库了。
-        这个按钮存在的意义是「让我干净地开始处理下一批」。
+        绑定在窗口上（焦点在任何地方都能触发），但**焦点在输入框里时不响应**
+        —— 否则改单元格、输来源名、在图片列表里按 T 跳转都会被误吃掉。
         """
-        n = len(self.batch_records)
-        if not n:
-            self._set_status("列表中已经没有本批数据了", "hint")
+        for seq in ("<Return>", "<KP_Enter>"):
+            self.bind(seq, self._hotkey_scan)
+        for seq in ("<Key-t>", "<Key-T>"):
+            self.bind(seq, self._hotkey_clear)
+
+    def _typing_somewhere(self) -> bool:
+        """焦点是不是在可输入/可打字的地方（那时快捷键要让路）。"""
+        if self._editor is not None:            # 正在编辑单元格
+            return True
+        w = self.focus_get()
+        if w is None:
+            return False
+        try:
+            return w.winfo_class() in ("Entry", "TEntry", "TCombobox",
+                                       "Text", "Listbox", "TSpinbox")
+        except Exception:
+            return False
+
+    def _hotkey_scan(self, _event=None) -> str:
+        if self._typing_somewhere():
+            return ""                           # 让输入框正常收到回车
+        if self.btn_start.instate(["!disabled"]):   # 识别中就不重复触发
+            self._start_scan()
+        return "break"
+
+    def _hotkey_clear(self, _event=None) -> str:
+        if self._typing_somewhere():
+            return ""                           # 用户是在打字，别抢
+        self._reset_panel()
+        return "break"
+
+    def _reset_panel(self) -> None:
+        """清空当前面板：待识别图片列表 + 结果列表的显示（T 键）。
+
+        **总库数据一条都不会删** —— 那要用「删除选中行」。
+        这个动作的意义是「干净地开始处理下一批」。
+        """
+        n_imgs = len(self.files)
+        n_rows = len(self.tree.get_children())
+        if not n_imgs and not n_rows:
+            self._set_status("面板已经是空的", "hint")
             return
-        if not messagebox.askyesno(
-                "清空本批列表",
-                f"把表里这 {n} 条从列表移除？\n\n"
-                f"线索仍然留在总库 leads.csv 里，不会删掉。\n"
-                f"（清空只是为了干净地开始下一批）",
-                parent=self):
-            return
+
+        self._clear_files()
         self.batch_records.clear()
         self.batch = self._fresh_batch()
         self._refresh_table()
-        self._set_status(f"列表已清空（{n} 条仍在总库里），可以接着贴下一批", "ok")
+
+        if self.temp_mode:
+            self._set_status(
+                f"已清空面板：{n_imgs} 张待识别图片、{n_rows} 条列表显示"
+                f"（总库数据未动，仍有 {len(self.db)} 条）", "ok")
+        else:
+            self._set_status(
+                f"已清空 {n_imgs} 张待识别图片。总库模式下列表显示的是全部 "
+                f"{len(self.db)} 条线索，没有清空 —— 只想看本批请勾选「临时模式」",
+                "ok")
 
     def _copy_batch(self) -> None:
         """按保存好的复制设置，把线索复制成制表符分隔的文本。

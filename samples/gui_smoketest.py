@@ -188,7 +188,7 @@ def main() -> int:
     if app.tree.get_children():
         fail(f"刚切到临时模式时列表该是空的，实际 {len(app.tree.get_children())} 行")
     if app.btn_clear_batch.instate(["disabled"]):
-        fail("临时模式下「清空本批」应可用")
+        fail("「清空面板」按钮应该始终可用（它不删数据）")
 
     app._clear_files()
     app.source_var.set("视频号-彭曦")
@@ -248,19 +248,28 @@ def main() -> int:
             fail(f"平台候选没按运营收窄：{got} != {want}")
         print(f"    双击来源平台候选收窄为 {got} ✔", flush=True)
 
-    # 清空本批：只清视图，数据不动
+    # 清空面板（T 键）：只清视图与图片列表，数据不动
     rows_after_scan = len(app.db)
-    ui.messagebox.askyesno = lambda *a, **k: True
-    try:
-        app._clear_batch()
-    finally:
-        ui.messagebox.askyesno = original_ask
+    app._reset_panel()
     app.update()
     if app.batch_records or app.tree.get_children():
-        fail("清空本批没生效")
+        fail("T 键清空面板没生效")
     if len(app.db) != rows_after_scan:
-        fail(f"清空本批不该动数据：{rows_after_scan} -> {len(app.db)}")
-    print(f"    清空本批列表 ✔（总库仍 {len(app.db)} 条，数据没删）", flush=True)
+        fail(f"清空面板不该动数据：{rows_after_scan} -> {len(app.db)}")
+    print(f"    清空面板 ✔（总库仍 {len(app.db)} 条，数据没删）", flush=True)
+
+    # 快捷键守门：Enter 触发识别（mock 掉真正的扫描，不跑 OCR）
+    fired = []
+    orig_scan, orig_typing = app._start_scan, app._typing_somewhere
+    app._start_scan = lambda: fired.append("scan")
+    app._typing_somewhere = lambda: False
+    try:
+        app._hotkey_scan()
+    finally:
+        app._start_scan, app._typing_somewhere = orig_scan, orig_typing
+    if "scan" not in fired:
+        fail("Enter 键没有触发识别")
+    print("    Enter 快捷键触发识别 ✔", flush=True)
 
     # 切回总库：显示全部
     app.temp_var.set(False)
