@@ -1,0 +1,14 @@
+# ============================================================
+# 方案②：RapidOCR（ONNX Runtime，轻量替代）
+# 安装：  pip install -r requirements-rapid.txt
+#
+# 特点：
+#   * 不需要 paddlepaddle，纯 pip 安装，Windows 上最省心
+#   * 支持 Python 3.13
+#   * 模型随包内置，离线可用
+# 程序会自动探测：装了 PaddleOCR 就优先用它，否则用 RapidOCR。
+# ============================================================
+
+-r requirements.txt
+
+rapidocr-onnxruntime>=1.3.0

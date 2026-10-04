@@ -1,0 +1,15 @@
+# ============================================================
+# Lead Scanner V0.1  ——  基础依赖（必装）
+# ============================================================
+# 安装：  pip install -r requirements.txt
+#
+# OCR 引擎请另外二选一安装：
+#   ① 需求指定 PaddleOCR    -> pip install -r requirements-paddle.txt
+#   ② 轻量替代 RapidOCR     -> pip install -r requirements-rapid.txt   （推荐先试）
+# ------------------------------------------------------------
+
+Pillow>=10.0.0              # 界面图片预览（PaddleOCR 也依赖它）
+
+# ---- 可选：OpenCV 图像预处理（灰度 + 放大），装不上不影响主流程 ----
+opencv-python>=4.8.0
+numpy>=1.24.0

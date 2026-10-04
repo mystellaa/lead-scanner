@@ -1,0 +1,16 @@
+# ============================================================
+# 方案①：PaddleOCR（需求文档指定）
+# 安装：  pip install -r requirements-paddle.txt
+#
+# 注意事项：
+#   * 需要 Python 3.8 ~ 3.12；Python 3.13 目前官方尚未提供 paddlepaddle 轮子，
+#     若报 “Could not find a version that satisfies the requirement paddlepaddle”
+#     请改用 requirements-rapid.txt
+#   * 首次识别会自动下载中文模型（约 10~20MB），国内网络可使用
+#     pip install -i https://pypi.tuna.tsinghua.edu.cn/simple 加速
+# ============================================================
+
+-r requirements.txt
+
+paddlepaddle>=2.6.0
+paddleocr>=2.7.0
