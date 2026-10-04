@@ -50,12 +50,38 @@ DEFAULT_SALES: list[tuple[str, list[str]]] = [
 NEWCOMER_GROUP = "新人"
 MENTOR_GROUP = "带教"
 
+# Full contact labels used when pasting people into the company table.
+DEFAULT_ACCOUNT_IDS: dict[str, str] = {
+    "彭曦": "彭曦(AAa琉璃瓦老彭)",
+    "刘一手": "刘一手(A刘一手)",
+    "梁毅": "梁毅(A真赞瓦业-梁毅)",
+    "王可": "王可(Aa王可)",
+    "叶虹池": "叶虹池(运营-叶虹池)",
+    "王烔彤": "王烔彤运营",
+    "张悦": "张悦(A真赞瓦业-张悦-18029395558)",
+    "区玉清": "区玉清(A真赞瓦业-小欧18029396635)",
+    "孔秋梅": "孔秋梅(真赞瓦业-孔秋梅-18029397762)",
+    "陈秀珍": "陈秀珍(A真赞瓦业-陈秀珍-13360301578)",
+    "吴超男": "吴超男(A真赞瓦业-吴超男-18666373836)",
+    "刘雅婷": "刘雅婷(A真赞瓦业-刘雅婷-18666515957)",
+    "韦东雅": "韦东雅(A真赞瓦业-韦东雅-13392262816)",
+    "朱倩琳": "A真赞别墅瓦-朱倩琳18688241985",
+    "李童瑶": "A-真赞别墅瓦-李童瑶18689313508(真赞瓦业-小李)",
+    "蒙丽萍": "A真赞瓦业-蒙丽萍-18666367072(蒙蒙)",
+    "吴嘉贤": "吴嘉贤(A真赞瓦业吴嘉贤18578366032)",
+    "梁素妍": "A-真赞瓦业-梁素妍-18688245519(真赞瓦业_梁素妍)",
+    "宋玉婷": "A真赞别墅瓦-宋玉婷-13392262817(A真赞别墅瓦-宋玉婷-13392262817)",
+    "罗淑冰": "真赞瓦业-罗淑冰18689239098",
+    "胡丹": "A佛山真赞瓦业-胡丹(A真赞瓦业-胡丹18665418517)",
+}
+
 # 名字相似度兜底阈值（同长度差一字的情况会先被精确规则捞走）
 SIMILARITY_THRESHOLD = 0.75
 
 # ---------------------------------------------------------------- 运行期状态
 OPERATORS: list[tuple[str, list[str]]] = []
 SALES: list[tuple[str, list[str]]] = []
+ACCOUNT_IDS: dict[str, str] = {}
 _ACCOUNT_TO_OPERATOR: dict[str, str] = {}
 _ACCOUNTS: list[str] = []
 _OPERATOR_NAMES: list[str] = []
@@ -98,12 +124,13 @@ def _rebuild_index() -> None:
 
 def load(force: bool = False) -> None:
     """载入名单：内置默认 -> 若存在 data/roster.json 则覆盖。"""
-    global OPERATORS, SALES, _loaded
+    global OPERATORS, SALES, ACCOUNT_IDS, _loaded
     if _loaded and not force:
         return
 
     OPERATORS = [(n, list(a)) for n, a in DEFAULT_OPERATORS]
     SALES = [(g, list(m)) for g, m in DEFAULT_SALES]
+    ACCOUNT_IDS = dict(DEFAULT_ACCOUNT_IDS)
 
     f = roster_file()
     if f.exists():
@@ -117,6 +144,10 @@ def load(force: bool = False) -> None:
                 OPERATORS = ops
             if sales:
                 SALES = sales
+            overrides = data.get("account_ids", {})
+            if isinstance(overrides, dict):
+                ACCOUNT_IDS.update({str(n).strip(): str(v).strip()
+                                    for n, v in overrides.items() if isinstance(v, str) and v.strip()})
             LOG.info("已从 %s 载入名单", f)
         except Exception:
             LOG.warning("roster.json 解析失败，回退内置名单", exc_info=True)
@@ -127,17 +158,36 @@ def load(force: bool = False) -> None:
 
 def save_template(path: Path | str | None = None) -> Path:
     """导出一份 roster.json 模板，改完放到 data/ 下即可覆盖内置名单。"""
+    load()
     path = Path(path or roster_file())
     path.parent.mkdir(parents=True, exist_ok=True)
     data = {
         "operators": [{"name": n, "accounts": a} for n, a in OPERATORS],
         "sales": [{"group": g, "members": m} for g, m in SALES],
+        "account_ids": {n: ACCOUNT_IDS.get(n, n) for n in operator_names() + sales_names()},
     }
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     return path
 
 
 # ---------------------------------------------------------------- 查询
+def export_contact_labels(value: str, *, business: bool = False) -> str:
+    """Expand canonical names for export; keep every assignee in one cell."""
+    load()
+    allowed = set(sales_names() if business else operator_names())
+    labels = {name: ACCOUNT_IDS.get(name, name) for name in allowed}
+    reverse = {label: name for name, label in labels.items()}
+    names = []
+    for part in str(value or "").replace("，", ",").split(","):
+        part = part.strip()
+        name = reverse.get(part, part)
+        if name and name not in names:
+            names.append(name)
+    if business:
+        names = order_responsibles(with_mentor(names))
+    return ",".join(labels.get(name, name) for name in names)
+
+
 def accounts() -> list[str]:
     load()
     return list(_ACCOUNTS)

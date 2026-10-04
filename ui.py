@@ -1337,7 +1337,7 @@ class LeadScannerApp(tk.Tk):
         lines: list[str] = []
         if with_header:
             lines.append("\t".join(config.CSV_HEADERS[fd] for fd in fields))
-        lines += ["\t".join(rec.to_row(fields)) for rec in records]
+        lines += ["\t".join(rec.to_row(fields, for_export=True)) for rec in records]
         try:
             self.clipboard_clear()
             self.clipboard_append("\n".join(lines))

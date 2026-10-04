@@ -33,8 +33,15 @@ class LeadRecord:
     discovered_at: str = ""      # 发现时间
     image_file: str = ""         # 图片来源（文件名）
 
-    def to_row(self, fields: Iterable[str] | None = None) -> list[str]:
-        return [str(getattr(self, f, "") or "") for f in (fields or config.CSV_FIELDS)]
+    def to_row(self, fields: Iterable[str] | None = None, *, for_export: bool = False) -> list[str]:
+        cols = list(fields or config.CSV_FIELDS)
+        values = [str(getattr(self, f, "") or "") for f in cols]
+        if for_export:
+            import roster
+            for i, name in enumerate(cols):
+                if name in ("source_person", "business"):
+                    values[i] = roster.export_contact_labels(values[i], business=name == "business")
+        return values
 
     @classmethod
     def from_row(cls, row: dict) -> "LeadRecord":
@@ -139,7 +146,7 @@ def read_header(path: Path | str) -> list[str]:
 
 def write_csv(path: Path | str, records: Iterable[LeadRecord],
               fields: Iterable[str] | None = None,
-              with_header: bool = True) -> None:
+              with_header: bool = True, *, for_export: bool = False) -> None:
     """写 CSV。
 
     fields      —— 要写哪些列（导出时按用户勾选传入），默认全部
@@ -153,7 +160,7 @@ def write_csv(path: Path | str, records: Iterable[LeadRecord],
         if with_header:
             w.writerow(header_names(cols))
         for rec in records:
-            w.writerow(rec.to_row(cols))
+            w.writerow(rec.to_row(cols, for_export=for_export))
 
 
 # ---------------------------------------------------------------- 数据库
@@ -415,7 +422,7 @@ class LeadDatabase:
         dest = Path(dest)
         dest.parent.mkdir(parents=True, exist_ok=True)
         write_csv(dest, self._records if records is None else records,
-                  fields=fields, with_header=with_header)
+                  fields=fields, with_header=with_header, for_export=True)
         return dest
 
     def backup(self, folder: Path | str | None = None) -> Path | None:

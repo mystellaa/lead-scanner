@@ -602,6 +602,38 @@ def test_roster() -> None:
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def test_contact_exports() -> None:
+    import csv
+    import roster
+
+    mentor = "A佛山真赞瓦业-胡丹(A真赞瓦业-胡丹18665418517)"
+    expected = "真赞瓦业-罗淑冰18689239098," + mentor
+    record = db.LeadRecord(phone="13812345678", source_person="彭曦", business="罗淑冰")
+    fields = ["phone", "source_person", "business"]
+    eq("复制与导出的完整账号格式", record.to_row(fields, for_export=True),
+       ["13812345678", "彭曦(AAa琉璃瓦老彭)", expected])
+    eq("内部存储保留规范姓名", record.to_row(fields), ["13812345678", "彭曦", "罗淑冰"])
+    eq("已有完整账号不会重复补带教", roster.export_contact_labels(expected, business=True), expected)
+    eq("多人新人只带一次带教",
+       roster.export_contact_labels("罗淑冰,李童瑶,胡丹,罗淑冰", business=True).count(mentor), 1)
+    eq("老业务不自动补带教", roster.export_contact_labels("区玉清", business=True),
+       "区玉清(A真赞瓦业-小欧18029396635)")
+    eq("空业务保持空", roster.export_contact_labels("", business=True), "")
+    check("所有现有名单成员都有完整账号",
+          all(n in roster.ACCOUNT_IDS for n in roster.operator_names() + roster.sales_names()))
+    for name in roster.newcomers():
+        eq(f"新人{name}带指定带教", roster.export_contact_labels(name, business=True),
+           roster.ACCOUNT_IDS[name] + "," + mentor)
+    with tempfile.TemporaryDirectory(prefix="ls_contacts_") as folder:
+        store = db.LeadDatabase(Path(folder) / "leads.csv")
+        store.add([record])
+        dest = store.export(Path(folder) / "export.csv", fields=fields)
+        with dest.open(encoding=config.CSV_ENCODING, newline="") as handle:
+            rows = list(csv.reader(handle))
+        eq("逗号连接的两名负责人仍在同一CSV单元格", rows[1], record.to_row(fields, for_export=True))
+        eq("导出没有改动总库姓名", db.read_csv(store.csv_path)[0].business, "罗淑冰")
+
+
 # ================================================================ main
 def main() -> int:
     print("=" * 62)
@@ -609,7 +641,7 @@ def main() -> int:
     print("=" * 62)
     for fn in (test_env, test_phone, test_customer_id, test_extract,
                test_group_chat, test_database, test_sources, test_line_order,
-               test_roster):
+               test_roster, test_contact_exports):
         try:
             fn()
         except Exception:
