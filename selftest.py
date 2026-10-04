@@ -421,7 +421,11 @@ def test_sources() -> None:
         config.save_copy_prefs(["phone", "source_person", "source_platform"], True)
         eq("复制设置能存能读",
            config.load_copy_prefs(),
-           (["phone", "source_person", "source_platform"], True))
+           (["phone", "source_person", "source_platform"], False))
+
+        config.COPY_PREFS_FILE.write_text(
+            '{"fields": ["phone"], "header": true}', encoding="utf-8")
+        eq("旧设置含表头时复制仍不带列名", config.load_copy_prefs(), (["phone"], False))
 
         config.save_copy_prefs(["不存在的列"], False)
         eq("非法列被过滤掉后退回默认",

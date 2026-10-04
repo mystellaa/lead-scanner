@@ -245,7 +245,8 @@ def load_copy_prefs() -> tuple[list[str], bool]:
             data = json.loads(COPY_PREFS_FILE.read_text(encoding="utf-8"))
             if isinstance(data, dict):
                 fields = [f for f in data.get("fields", []) if f in CSV_FIELDS]
-                header = bool(data.get("header", COPY_HEADER_DEFAULT))
+                # Clipboard rows are pasted into an existing table, including for old preferences.
+                header = False
         except Exception:
             logging.getLogger("lead_scanner").warning(
                 "copy_prefs.json 解析失败，用默认复制设置", exc_info=True)
@@ -260,7 +261,7 @@ def save_copy_prefs(fields: list[str], with_header: bool) -> None:
     clean = [f for f in fields if f in CSV_FIELDS]
     try:
         COPY_PREFS_FILE.write_text(
-            json.dumps({"fields": clean, "header": bool(with_header)},
+            json.dumps({"fields": clean, "header": False},
                        ensure_ascii=False, indent=2), encoding="utf-8")
     except Exception:
         logging.getLogger("lead_scanner").warning(

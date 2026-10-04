@@ -1550,7 +1550,7 @@ class CopyDialog(tk.Toplevel):
         body = tk.Frame(self, bg=CARD)
         body.pack(fill="x", padx=18, pady=(8, 4))
         cols = list(config.COPY_FIELDS)
-        saved_fields, saved_header = config.load_copy_prefs()
+        saved_fields, _ = config.load_copy_prefs()
         half = (len(cols) + 1) // 2
         for i, field in enumerate(cols):
             var = tk.BooleanVar(value=field in saved_fields)
@@ -1566,13 +1566,6 @@ class CopyDialog(tk.Toplevel):
 
         opt = tk.Frame(self, bg=CARD)
         opt.pack(fill="x", padx=18, pady=8)
-        self.header_var = tk.BooleanVar(value=saved_header)
-        tk.Checkbutton(
-            opt, text="带上表头（默认不带 —— 粘过去表头会占掉一行）",
-            variable=self.header_var,
-            bg=CARD, fg=FG, activebackground=CARD, activeforeground=FG,
-            selectcolor="#ffffff", anchor="w", font=(f, config.UI_FONT_SIZE),
-        ).pack(anchor="w")
         tk.Label(opt, text="点「确定」即存为默认，之后「复制本批」直接按这个输出",
                  bg=CARD, fg=PRIMARY,
                  font=(f, config.UI_FONT_SIZE)).pack(anchor="w", pady=(4, 0))
@@ -1610,7 +1603,7 @@ class CopyDialog(tk.Toplevel):
         if not fields:
             messagebox.showwarning("提示", "至少要勾选一列。", parent=self)
             return
-        self.result = (fields, bool(self.header_var.get()))
+        self.result = (fields, False)
         self.destroy()
 
 
