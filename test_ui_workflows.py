@@ -67,5 +67,31 @@ class EntryModesTest(unittest.TestCase):
         self.assertEqual(app.db.records[0].source_platform, "")
 
 
+class ClipboardColumnsTest(unittest.TestCase):
+    def test_only_four_selected_columns_are_copied(self):
+        output = []
+        app = SimpleNamespace(clipboard_clear=Mock(), clipboard_append=output.append, update=Mock())
+        record = database.LeadRecord(phone="13812345678", source_platform="",
+                                     source_person="彭曦", content="第一段\t第二段\n第三段",
+                                     note="不应复制的备注")
+        fields = ["phone", "source_platform", "source_person", "content"]
+        self.assertTrue(ui.LeadScannerApp._copy_records(app, [record], fields, False))
+        self.assertEqual(len(output[0].splitlines()), 1)
+        self.assertEqual(len(output[0].split("\t")), 4)
+        self.assertEqual(output[0].split("\t")[1], "")
+        self.assertNotIn(record.note, output[0])
+
+    def test_copy_uses_this_dialog_not_old_preferences(self):
+        fields = ["phone", "source_platform", "source_person", "business"]
+        app = SimpleNamespace(_pick_records=lambda: [database.LeadRecord(phone="13812345678")],
+                              wait_window=Mock(), _copy_records=Mock(return_value=True),
+                              tree=SimpleNamespace(selection=lambda: []), _set_status=Mock())
+        with patch.object(ui, "CopyDialog", return_value=SimpleNamespace(result=(fields, False))), \
+             patch.object(ui.config, "save_copy_prefs"):
+            ui.LeadScannerApp._copy_batch(app)
+        self.assertEqual(app._copy_records.call_args.args[1], fields)
+        self.assertFalse(app._copy_records.call_args.args[2])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1319,7 +1319,13 @@ class LeadScannerApp(tk.Tk):
         if not picked:
             messagebox.showinfo("提示", "当前表里没有可复制的线索。", parent=self)
             return
-        fields, with_header = config.load_copy_prefs()
+        dlg = CopyDialog(self)
+        self.wait_window(dlg)
+        if not dlg.result:
+            return
+        fields, _ = dlg.result
+        with_header = False
+        config.save_copy_prefs(fields, False)
         if not self._copy_records(picked, fields, with_header):
             return
         scope = "选中" if self.tree.selection() else "当前"
@@ -1334,7 +1340,9 @@ class LeadScannerApp(tk.Tk):
         lines: list[str] = []
         if with_header:
             lines.append("\t".join(config.CSV_HEADERS[fd] for fd in fields))
-        lines += ["\t".join(rec.to_row(fields, for_export=True)) for rec in records]
+        # Embedded cell separators must not create extra spreadsheet rows or columns.
+        lines += ["\t".join(value.replace("\t", " ").replace("\r", " ").replace("\n", " ")
+                            for value in rec.to_row(fields, for_export=True)) for rec in records]
         try:
             self.clipboard_clear()
             self.clipboard_append("\n".join(lines))
