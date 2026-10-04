@@ -179,17 +179,24 @@ class LeadScannerApp(tk.Tk):
 
     # -------------------------------------------------- ① 来源
     def _build_source_bar(self, row: int) -> None:
-        box = ttk.Labelframe(self, text=" ① 选择来源视频号（可直接打字筛选） ",
+        box = ttk.Labelframe(self, text=" ① 登记方式 ",
                              style="Card.TLabelframe")
         box.grid(row=row, column=0, sticky="ew", padx=10, pady=(10, 5))
         box.columnconfigure(3, weight=1)
+        self.entry_mode = tk.StringVar(value="delegate")
+        modes = ttk.Frame(box)
+        modes.grid(row=1, column=0, columnspan=7, sticky="w", pady=(6, 2))
+        ttk.Radiobutton(modes, text="代他人登记", variable=self.entry_mode,
+                        value="delegate", command=self._change_entry_mode).pack(side="left")
+        ttk.Radiobutton(modes, text="同平台批量导入", variable=self.entry_mode,
+                        value="platform", command=self._change_entry_mode).pack(side="left", padx=16)
 
         ttk.Label(box, text="视频号：", style="Card.TLabel").grid(
             row=0, column=0, padx=(2, 5), pady=1)
         self.source_var = tk.StringVar()
         # state="normal" —— 允许直接输入，配合 <KeyRelease> 做实时筛选
         self.source_combo = ttk.Combobox(box, textvariable=self.source_var,
-                                         state="normal", width=26,
+                                         state="disabled", width=26,
                                          font=(self.font_family, config.UI_FONT_SIZE))
         self.source_combo.grid(row=0, column=1, padx=(0, 6), pady=1, sticky="w")
         self.source_combo.bind("<<ComboboxSelected>>", lambda e: self._on_source_change())
@@ -439,7 +446,15 @@ class LeadScannerApp(tk.Tk):
         self._update_source_hint()
 
     def _current_source(self) -> str:
+        if self.entry_mode.get() == "delegate":
+            return ""
         return (self.source_var.get() or "").strip()
+
+    def _change_entry_mode(self) -> None:
+        self.source_var.set("")
+        self.source_combo.configure(values=self.sources,
+                                    state="disabled" if self.entry_mode.get() == "delegate" else "normal")
+        self._update_source_hint()
 
     def _on_source_change(self) -> None:
         self._update_source_hint()
@@ -468,6 +483,9 @@ class LeadScannerApp(tk.Tk):
             self._set_status("没有匹配的来源 —— 按「＋ 新增来源」可以把它加进去", "warn")
 
     def _update_source_hint(self) -> None:
+        if self.entry_mode.get() == "delegate":
+            self.source_hint.configure(text="平台待补充")
+            return
         src = self._current_source()
         parts: list[str] = []
         if src:
@@ -698,13 +716,13 @@ class LeadScannerApp(tk.Tk):
             messagebox.showinfo("提示", "正在识别中，请稍候…", parent=self)
             return
         source = self._current_source()
-        if not source:
+        if not source and self.entry_mode.get() == "platform":
             messagebox.showwarning("提示",
                                    "请先选择来源视频号。\n（顶部输入框可以直接打字筛选）",
                                    parent=self)
             self.source_combo.focus_set()
             return
-        if source not in self.sources:          # 手输的新来源，自动登记下来
+        if source and source not in self.sources:          # 手输的新来源，自动登记下来
             self.sources = config.save_sources(self.sources + [source])
             self._refresh_source_combo()
             self.source_var.set(source)
@@ -781,7 +799,7 @@ class LeadScannerApp(tk.Tk):
             self.progress.configure(value=idx)
             self.batch["images"] += 1
             if leads:
-                source = self.batch.get("source") or self._current_source()
+                source = self.batch.get("source", "")
                 records = [
                     db.LeadRecord(
                         customer_id=lead.customer_id,
@@ -850,29 +868,8 @@ class LeadScannerApp(tk.Tk):
         self._narrow_sources_by_batch()
 
     def _narrow_sources_by_batch(self) -> None:
-        """本批发布人如果是同一位运营，就把来源候选收窄成他名下的账号。
-
-        截图里往往读不出「平台」，但读得出「发布人」，而发布人就是运营。
-        顺着运营把他负责的平台摆到下拉里，点一下就选定了。
-        """
-        people = {(r.source_person or "").strip() for r in self.batch_records}
-        people.discard("")
-        if len(people) != 1:
-            return
-        person = people.pop()
-        accs = roster.accounts_of(person)
-        if not accs:
-            return
-        changed = self.source_combo["values"] != tuple(accs)
-        self.source_combo["values"] = accs
-        cur = self._current_source()
-        if cur and cur not in accs:              # 选的和发布人对不上，清掉别让他误提交
-            self.source_var.set("")
-        self._update_source_hint()
-        if changed:
-            self._set_status(
-                f"本批发布人都是「{person}」，来源候选已收窄到他负责的平台："
-                f"{'、'.join(accs)}", "ok")
+        """A completed batch must not restrict the next batch's platform choices."""
+        self.source_combo["values"] = self.sources
 
     # -------------------------------------------------- 统计
     def _fresh_batch(self) -> dict:
