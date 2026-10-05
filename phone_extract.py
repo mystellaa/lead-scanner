@@ -281,6 +281,27 @@ def _id_for_line(lines: list[str], idx: int) -> tuple[str, str]:
     return "", ""
 
 
+def _follow_list_id(lines: list[str], idx: int) -> tuple[str, str]:
+    """Bind a phone in a contacts/following list to the compact ID row.
+
+    List rows often contain a display nickname followed by the account ID. The
+    ID is usually the short 2-4 Chinese-character candidate immediately above
+    the phone, so it must be preferred over a longer display nickname.
+    """
+    candidates = []
+    for j in range(max(0, idx - 4), idx + 1):
+        line = re.sub(r"\s+", "", lines[j])
+        line = _LEADING_INDEX_RE.sub("", line)
+        line = re.sub(r"[^\u4e00-\u9fa5A-Za-z0-9_-]", "", line)
+        if not line or extract_phones(line) or line in config.ID_BLOCKLIST:
+            continue
+        if 2 <= len(line) <= 4 and re.fullmatch(r"[\u4e00-\u9fa5]{2,4}", line):
+            candidates.append((j, line))
+    if candidates:
+        return candidates[-1][1], "关注列表短ID"
+    return _id_for_line(lines, idx)
+
+
 def extract_customer_id(lines) -> tuple[str, str]:
     """全局提取一个客户ID（整段文本只找最显眼的那一个）。
 
@@ -613,7 +634,7 @@ def extract_lead(text: str, source_platform: str = "") -> Lead:
                 raw_text=text, id_source=src, person_source=person_src)
 
 
-def extract_leads(text: str, source_platform: str = "") -> list[Lead]:
+def extract_leads(text: str, source_platform: str = "", layout: str = "chat") -> list[Lead]:
     """从一段 OCR 文本中抽取全部线索。
 
     规则：
@@ -654,7 +675,8 @@ def extract_leads(text: str, source_platform: str = "") -> list[Lead]:
         fresh = [h for h in hits if h.phone not in seen_phones]
         if not fresh:
             continue
-        cid, src = _id_for_line(lines, idx)
+        cid, src = (_follow_list_id(lines, idx) if layout == "follow_list"
+                    else _id_for_line(lines, idx))
         if not cid and total_hits == 1:
             cid, src = global_cid, global_src
 

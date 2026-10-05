@@ -20,6 +20,7 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import random
 from difflib import SequenceMatcher
 from pathlib import Path
 
@@ -89,6 +90,64 @@ _SALES_GROUP: dict[str, str] = {}
 _SALES_NAMES: list[str] = []
 _MENTOR_NAMES: list[str] = []
 _loaded = False
+
+
+def _assignment_state() -> dict:
+    default = {"mode": "round_robin", "enabled": {}, "cursor": 0}
+    try:
+        data = json.loads(config.ASSIGNMENT_PREFS_FILE.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            default.update(data)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        pass
+    names = sales_names()
+    enabled = default.get("enabled")
+    if not isinstance(enabled, dict):
+        enabled = {}
+    default["enabled"] = {n: bool(enabled.get(n, True)) for n in names}
+    default["cursor"] = int(default.get("cursor", 0) or 0)
+    return default
+
+
+def save_assignment_state(*, mode: str | None = None,
+                          enabled: dict[str, bool] | None = None,
+                          cursor: int | None = None) -> dict:
+    state = _assignment_state()
+    if mode in ("round_robin", "random"):
+        state["mode"] = mode
+    if enabled is not None:
+        state["enabled"] = {n: bool(enabled.get(n, True)) for n in sales_names()}
+    if cursor is not None:
+        state["cursor"] = int(cursor)
+    config.ensure_dirs()
+    config.ASSIGNMENT_PREFS_FILE.write_text(
+        json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
+    return state
+
+
+def assignment_settings() -> dict:
+    return _assignment_state()
+
+
+def assign_business(count: int, mode: str | None = None, *, commit: bool = True) -> list[str]:
+    """Return assignees for new leads and update the cursor only after selection."""
+    state = _assignment_state()
+    active = [n for n in sales_names() if state["enabled"].get(n, True)]
+    if not active:
+        return []
+    selected_mode = mode if mode in ("round_robin", "random") else state["mode"]
+    if selected_mode == "random":
+        return [random.choice(active) for _ in range(count)]
+    cursor = state["cursor"] % len(active)
+    result = [active[(cursor + i) % len(active)] for i in range(count)]
+    if commit:
+        save_assignment_state(cursor=cursor + count)
+    return result
+
+
+def commit_assignment(count: int) -> None:
+    state = _assignment_state()
+    save_assignment_state(cursor=int(state.get("cursor", 0)) + int(count))
 
 
 def roster_file() -> Path:

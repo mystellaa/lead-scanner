@@ -175,6 +175,7 @@ LEADS_CSV = DATA_DIR / "leads.csv"
 SOURCES_FILE = DATA_DIR / "sources.json"
 EXPORT_PREFS_FILE = DATA_DIR / "export_prefs.json"    # 导出对话框记住的选择
 COPY_PREFS_FILE = DATA_DIR / "copy_prefs.json"        # 复制到剪贴板记住的选择
+ASSIGNMENT_PREFS_FILE = DATA_DIR / "assignment_prefs.json"
 LOG_FILE = DATA_DIR / "lead_scanner.log"
 
 
