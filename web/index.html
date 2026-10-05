@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Lead Scanner · 线索工作台</title>
+    <meta name="description" content="截图线索整理工作台的 Web 视觉原型" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="ambient-grid" aria-hidden="true"></div>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="#top" aria-label="Lead Scanner 首页">
+          <span class="brand-mark"><span></span><span></span><span></span></span>
+          <span>Lead Scanner</span>
+        </a>
+        <div class="topbar-actions">
+          <span class="system-status"><i></i> 本地工作台</span>
+          <button class="icon-button" id="themeToggle" type="button" title="切换亮暗主题" aria-label="切换亮暗主题">◐</button>
+        </div>
+      </header>
+
+      <main id="top">
+        <section class="workspace-heading">
+          <div>
+            <p class="eyebrow"><span class="live-dot"></span> SCREEN TO LEAD</p>
+            <h1>线索工作台</h1>
+            <p class="heading-copy">把截图里的零散信息，整理成一批可复核、可导出的线索。</p>
+          </div>
+          <div class="flow-rail" aria-label="当前工作流程">
+            <span class="flow-step active"><b>01</b>输入</span>
+            <span class="flow-line"></span>
+            <span class="flow-step"><b>02</b>识别</span>
+            <span class="flow-line"></span>
+            <span class="flow-step"><b>03</b>复核</span>
+            <span class="flow-line"></span>
+            <span class="flow-step"><b>04</b>导出</span>
+          </div>
+        </section>
+
+        <section class="control-strip border-beam">
+          <div class="mode-control">
+            <span class="field-label">登记方式</span>
+            <div class="segmented" role="group" aria-label="登记方式">
+              <button class="segment active" type="button" data-mode="delegate">代登记</button>
+              <button class="segment" type="button" data-mode="platform">同平台批量</button>
+            </div>
+          </div>
+          <label class="select-control">
+            <span class="field-label">来源</span>
+            <select id="sourceSelect" disabled>
+              <option>暂不指定来源</option>
+              <option>来源平台 A</option>
+              <option>来源平台 B</option>
+            </select>
+          </label>
+          <label class="select-control">
+            <span class="field-label">布局</span>
+            <select id="layoutSelect">
+              <option>群聊 / 评论</option>
+              <option>关注列表</option>
+            </select>
+          </label>
+          <div class="control-actions">
+            <button class="button button-ghost" id="fileButton" type="button"><span class="button-icon">＋</span>添加图片</button>
+            <button class="button button-primary shimmer" id="scanButton" type="button"><span class="button-icon">✦</span>开始识别</button>
+            <input id="fileInput" type="file" accept="image/png,image/jpeg" multiple hidden />
+          </div>
+        </section>
+
+        <section class="metric-grid" aria-label="批次统计">
+          <article class="metric-card">
+            <span class="metric-label">本批手机号</span>
+            <strong id="phoneCount">0</strong>
+            <span class="metric-trend neutral">等待识别</span>
+          </article>
+          <article class="metric-card accent-green">
+            <span class="metric-label">本批客户</span>
+            <strong id="leadCount">0</strong>
+            <span class="metric-trend neutral">待复核</span>
+          </article>
+          <article class="metric-card accent-violet">
+            <span class="metric-label">图片队列</span>
+            <strong id="fileCount">0</strong>
+            <span class="metric-trend neutral" id="queueState">尚未开始</span>
+          </article>
+          <article class="metric-card accent-orange">
+            <span class="metric-label">当前来源</span>
+            <strong class="metric-source" id="sourceMetric">未指定</strong>
+            <span class="metric-trend neutral">可后补</span>
+          </article>
+        </section>
+
+        <section class="work-grid">
+          <article class="panel ingest-panel border-beam">
+            <div class="panel-heading">
+              <div>
+                <p class="panel-kicker">INPUT QUEUE</p>
+                <h2>图片输入</h2>
+              </div>
+              <span class="panel-count" id="queueCount">0 files</span>
+            </div>
+            <button class="dropzone" id="dropzone" type="button">
+              <span class="drop-icon">↥</span>
+              <strong>粘贴或拖入截图</strong>
+              <span>PNG / JPG / JPEG</span>
+            </button>
+            <div class="queue-list" id="queueList">
+              <div class="empty-state">图片会出现在这里</div>
+            </div>
+          </article>
+
+          <article class="panel results-panel">
+            <div class="panel-heading results-heading">
+              <div>
+                <p class="panel-kicker">CURRENT BATCH</p>
+                <h2>识别结果</h2>
+              </div>
+              <div class="results-actions">
+                <label class="search-box">
+                  <span aria-hidden="true">⌕</span>
+                  <input id="searchInput" type="search" placeholder="搜索客户或手机号" />
+                </label>
+                <button class="button button-ghost" id="copyButton" type="button"><span class="button-icon">▣</span>复制当前批次</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>客户 ID</th>
+                    <th>手机号</th>
+                    <th>来源</th>
+                    <th>状态</th>
+                    <th class="align-right">图片</th>
+                  </tr>
+                </thead>
+                <tbody id="resultsBody">
+                  <tr class="empty-row"><td colspan="5">暂无识别结果</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="panel-footer">
+              <span id="statusText">演示界面已就绪</span>
+              <span class="footer-hint">Web 载体 · 视觉原型</span>
+            </div>
+          </article>
+        </section>
+      </main>
+    </div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="app.js"></script>
+  </body>
+</html>

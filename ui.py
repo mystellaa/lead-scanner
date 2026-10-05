@@ -31,17 +31,18 @@ import roster
 
 LOG = logging.getLogger("lead_scanner")  # run_app() 里会补上文件日志
 
-# 配色（浅色主题）
-BG = "#eef1f5"        # 页面底色，比卡片稍深一点才能显出层次
-CARD = "#ffffff"
-FG = "#1f2329"
-MUTED = "#8c939d"
-PRIMARY = "#07c160"
-PRIMARY_HOVER = "#06ad56"
-PRIMARY_DISABLED = "#a8e6c4"
-DANGER = "#e34d59"
-WARN = "#ff8f1f"
-BORDER = "#e3e6eb"
+# 配色（Magic UI 风格的深色工作台：低对比底色 + 青绿状态色）
+BG = "#0b0f16"
+CARD = "#121821"
+INPUT = "#0e151e"
+FG = "#eef4fa"
+MUTED = "#8c9bad"
+PRIMARY = "#72e6b3"
+PRIMARY_HOVER = "#9af5ca"
+PRIMARY_DISABLED = "#365c4a"
+DANGER = "#ff7d94"
+WARN = "#ffbd76"
+BORDER = "#293443"
 
 
 class LeadScannerApp(tk.Tk):
@@ -125,30 +126,34 @@ class LeadScannerApp(tk.Tk):
         s.configure("TLabelframe.Label", background=BG, foreground=MUTED,
                     font=(f, size - 1, "bold"))
 
-        s.configure("TButton", padding=(9, 4), background="#ffffff", foreground=FG)
+        s.configure("TButton", padding=(9, 4), background=CARD, foreground=FG)
         try:      # bordercolor / focuscolor 是 clam 主题专有选项，换主题就可能不认
             s.configure("TButton", bordercolor=BORDER, focuscolor=BG)
         except tk.TclError:
             pass
         s.map("TButton",
-              background=[("active", "#eef0f2"), ("disabled", "#f5f6f8")],
+              background=[("active", "#202c39"), ("disabled", "#141b24")],
               foreground=[("disabled", MUTED)])
 
         s.configure("Primary.TButton", padding=(16, 6), background=PRIMARY,
-                    foreground="#ffffff", font=(f, size + 1, "bold"))
+                    foreground="#071016", font=(f, size + 1, "bold"))
         try:
             s.configure("Primary.TButton", borderwidth=0)
         except tk.TclError:
             pass
         s.map("Primary.TButton",
               background=[("active", PRIMARY_HOVER), ("disabled", PRIMARY_DISABLED)],
-              foreground=[("disabled", "#ffffff")])
+              foreground=[("disabled", "#9ab4a8")])
 
-        s.configure("TCombobox", padding=3)
-        s.configure("TEntry", padding=3)
+        s.configure("TCombobox", padding=3, fieldbackground=INPUT,
+                    background=INPUT, foreground=FG, arrowcolor=MUTED)
+        s.map("TCombobox", fieldbackground=[("readonly", INPUT), ("disabled", BG)],
+              foreground=[("disabled", MUTED)])
+        s.configure("TEntry", padding=3, fieldbackground=INPUT,
+                    foreground=FG, insertcolor=FG)
         s.configure("TCheckbutton", background=CARD)
         s.map("TCheckbutton", background=[("active", CARD)])
-        s.configure("TProgressbar", background=PRIMARY, troughcolor="#e8eaed")
+        s.configure("TProgressbar", background=PRIMARY, troughcolor="#1d2632")
         try:
             s.configure("TProgressbar", bordercolor=BORDER,
                         lightcolor=PRIMARY, darkcolor=PRIMARY)
@@ -161,10 +166,10 @@ class LeadScannerApp(tk.Tk):
             s.configure("Treeview", bordercolor=BORDER)
         except tk.TclError:
             pass
-        s.configure("Treeview.Heading", background="#f8f9fb", foreground=MUTED,
+        s.configure("Treeview.Heading", background="#18222e", foreground=MUTED,
                     font=(f, size - 1, "bold"), relief="flat", padding=(4, 5))
-        s.map("Treeview.Heading", background=[("active", "#eef0f2")])
-        s.map("Treeview", background=[("selected", "#e3f5ea")],
+        s.map("Treeview.Heading", background=[("active", "#22303e")])
+        s.map("Treeview", background=[("selected", "#1f3a34")],
               foreground=[("selected", FG)])
 
     # ============================================================ UI 组装
@@ -246,7 +251,7 @@ class LeadScannerApp(tk.Tk):
         self.file_list = tk.Listbox(
             body, selectmode="extended", height=5, activestyle="none",
             font=(self.font_family, config.UI_FONT_SIZE),
-            bg=CARD, fg=FG, selectbackground="#e3f5ea", selectforeground=FG,
+            bg=CARD, fg=FG, selectbackground="#1f3a34", selectforeground=FG,
             highlightthickness=1, highlightbackground=BORDER, relief="flat")
         self.file_list.grid(row=0, column=0, sticky="nsew")
         self.file_list.bind("<<ListboxSelect>>", self._on_file_select)
@@ -255,7 +260,7 @@ class LeadScannerApp(tk.Tk):
         sb.grid(row=0, column=1, sticky="ns")
         self.file_list.configure(yscrollcommand=sb.set)
 
-        self.preview = tk.Canvas(body, width=190, height=108, bg="#fafbfc",
+        self.preview = tk.Canvas(body, width=190, height=108, bg=INPUT,
                                  highlightthickness=1, highlightbackground=BORDER)
         self.preview.grid(row=0, column=2, padx=(8, 0), sticky="n")
         self.preview.create_text(95, 54, text="选中图片可预览", fill=MUTED,
@@ -281,7 +286,7 @@ class LeadScannerApp(tk.Tk):
             box, text="临时模式（只看本批）", variable=self.temp_var,
             command=self._toggle_temp_mode,
             bg=BG, fg=FG, activebackground=BG, activeforeground=FG,
-            selectcolor="#ffffff", font=(self.font_family, config.UI_FONT_SIZE))
+            selectcolor=INPUT, font=(self.font_family, config.UI_FONT_SIZE))
         self.temp_check.grid(row=0, column=1, padx=(12, 0), sticky="w")
 
         ttk.Button(box, text="业务分配", command=self._assign_business).grid(
@@ -344,7 +349,7 @@ class LeadScannerApp(tk.Tk):
         hsb.grid(row=2, column=0, sticky="ew")
         self.tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
 
-        self.tree.tag_configure("new", background="#f2fbf6")
+        self.tree.tag_configure("new", background="#17332a")
         self.tree.tag_configure("bad", foreground=WARN)
         self.tree.bind("<Double-1>", self._on_cell_double_click)
         self.tree.bind("<Button-3>", self._on_tree_right_click)
@@ -1499,7 +1504,7 @@ class ExportDialog(tk.Toplevel):
             tk.Checkbutton(
                 body, text=config.CSV_HEADERS[field], variable=var,
                 bg=CARD, fg=FG, activebackground=CARD, activeforeground=FG,
-                selectcolor="#ffffff", anchor="w",
+                selectcolor=INPUT, anchor="w",
                 font=(f, config.UI_FONT_SIZE),
             ).grid(row=i % half, column=i // half, sticky="w", padx=(0, 28), pady=1)
 
@@ -1511,7 +1516,7 @@ class ExportDialog(tk.Toplevel):
         tk.Checkbutton(
             opt, text="包含表头（第一行写列名）", variable=self.header_var,
             bg=CARD, fg=FG, activebackground=CARD, activeforeground=FG,
-            selectcolor="#ffffff", anchor="w", font=(f, config.UI_FONT_SIZE),
+            selectcolor=INPUT, anchor="w", font=(f, config.UI_FONT_SIZE),
         ).pack(anchor="w")
 
         self.remember_var = tk.BooleanVar(value=False)
@@ -1519,7 +1524,7 @@ class ExportDialog(tk.Toplevel):
             opt, text="保存为默认导出选项（下次打开自动带出这次的勾选）",
             variable=self.remember_var,
             bg=CARD, fg=PRIMARY, activebackground=CARD, activeforeground=PRIMARY,
-            selectcolor="#ffffff", anchor="w", font=(f, config.UI_FONT_SIZE),
+            selectcolor=INPUT, anchor="w", font=(f, config.UI_FONT_SIZE),
         ).pack(anchor="w", pady=(4, 0))
 
         btns = tk.Frame(self, bg=CARD)
@@ -1591,7 +1596,7 @@ class AssignmentDialog(tk.Toplevel):
             var = tk.BooleanVar(value=state["enabled"].get(name, True))
             self.vars[name] = var
             tk.Checkbutton(roster_box, text=name, variable=var, bg=CARD, fg=FG,
-                           activebackground=CARD, selectcolor="#ffffff").pack(anchor="w")
+                           activebackground=CARD, selectcolor=INPUT).pack(anchor="w")
         buttons = ttk.Frame(body)
         buttons.pack(fill="x", pady=(12, 0))
         ttk.Button(buttons, text="取消", command=self.destroy).pack(side="right", padx=(6, 0))
@@ -1650,7 +1655,7 @@ class CopyDialog(tk.Toplevel):
             tk.Checkbutton(
                 body, text=config.CSV_HEADERS[field], variable=var,
                 bg=CARD, fg=FG, activebackground=CARD, activeforeground=FG,
-                selectcolor="#ffffff", anchor="w",
+                selectcolor=INPUT, anchor="w",
                 font=(f, config.UI_FONT_SIZE),
             ).grid(row=i % half, column=i // half, sticky="w", padx=(0, 28), pady=1)
 
@@ -1729,8 +1734,8 @@ class RosterImportDialog(tk.Toplevel):
             op = tk.BooleanVar(value=entry["name"] in roster.operator_names())
             sales = tk.BooleanVar(value=entry["name"] in roster.sales_names())
             self.vars[label] = (op, sales)
-            tk.Checkbutton(body, text="运营", variable=op, bg=CARD, selectcolor="#ffffff").grid(row=row, column=2, padx=4)
-            tk.Checkbutton(body, text="业务", variable=sales, bg=CARD, selectcolor="#ffffff").grid(row=row, column=3, padx=4)
+            tk.Checkbutton(body, text="运营", variable=op, bg=CARD, selectcolor=INPUT).grid(row=row, column=2, padx=4)
+            tk.Checkbutton(body, text="业务", variable=sales, bg=CARD, selectcolor=INPUT).grid(row=row, column=3, padx=4)
         buttons = ttk.Frame(self)
         buttons.pack(fill="x", padx=14, pady=12)
         ttk.Button(buttons, text="取消", command=self.destroy).pack(side="right", padx=(6, 0))
@@ -1962,7 +1967,7 @@ class BusinessPickDialog(tk.Toplevel):
                 self.vars[name] = var
                 tk.Checkbutton(row, text=name, variable=var, bg=CARD, fg=FG,
                                activebackground=CARD, activeforeground=FG,
-                               selectcolor="#ffffff", anchor="w",
+                               selectcolor=INPUT, anchor="w",
                                font=(f, config.UI_FONT_SIZE)).grid(
                     row=i // 5, column=i % 5, sticky="w", padx=(0, 16), pady=1)
 

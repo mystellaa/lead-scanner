@@ -44,6 +44,16 @@ python main.py
 
 也可以在 Windows 中运行 `启动程序.bat`。
 
+## Web 视觉预览
+
+项目内的 `web/` 是与 Tkinter 共用视觉语言的 Web 载体，目前提供输入、批次统计、识别队列、结果表和复制交互的前端原型。它暂时不执行真实 OCR。
+
+```powershell
+python -m http.server 4173 --directory web
+```
+
+然后打开 `http://127.0.0.1:4173/`。
+
 ## 基本流程
 
 1. 选择输入模式。
