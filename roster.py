@@ -50,6 +50,7 @@ DEFAULT_SALES: list[tuple[str, list[str]]] = [
 
 NEWCOMER_GROUP = "新人"
 MENTOR_GROUP = "带教"
+IMPORTED_ROSTER_FILE = config.DATA_DIR / "contact_roster.json"
 
 # Full contact labels used when pasting people into the company table.
 DEFAULT_ACCOUNT_IDS: dict[str, str] = {
@@ -227,6 +228,68 @@ def save_template(path: Path | str | None = None) -> Path:
     }
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     return path
+
+
+def _infer_import_name(label: str) -> str:
+    load()
+    known = sorted(set(operator_names() + sales_names()), key=len, reverse=True)
+    for name in known:
+        if name and name in label:
+            return name
+    before_phone = re.search(r"([\u4e00-\u9fff]{2,6})(?=\d{7,11})", label)
+    if before_phone:
+        return before_phone.group(1)
+    clean = re.sub(r"^[A-Za-z0-9_ -]+", "", label).strip("- _")
+    return clean or label
+
+
+def parse_contact_table(text: str) -> list[dict[str, str]]:
+    """Parse an enterprise contact list separated by semicolons or newlines."""
+    entries = []
+    seen = set()
+    for raw in re.split(r"[;；\r\n]+", text or ""):
+        label = re.sub(r"\s+", " ", raw).strip()
+        if not label or label in seen:
+            continue
+        seen.add(label)
+        entries.append({"name": _infer_import_name(label), "label": label})
+    return entries
+
+
+def apply_imported_roles(entries: list[dict[str, str]], roles: dict[str, set[str]]) -> None:
+    """Replace the active roster with checked roles from an imported table."""
+    global OPERATORS, SALES, ACCOUNT_IDS, _loaded
+    operators = []
+    sales = []
+    ids = {}
+    old_groups = {name: group for group, members in SALES for name in members}
+    for entry in entries:
+        name, label = entry["name"].strip(), entry["label"].strip()
+        selected = roles.get(label, set())
+        if not name or not selected:
+            continue
+        ids[name] = label
+        if "operator" in selected:
+            operators.append((name, [label]))
+        if "sales" in selected:
+            group = old_groups.get(name, "导入业务")
+            for i, (group_name, members) in enumerate(sales):
+                if group_name == group:
+                    members.append(name)
+                    break
+            else:
+                sales.append((group, [name]))
+    if not operators and not sales:
+        raise ValueError("至少要勾选一名运营或业务")
+    OPERATORS, SALES = operators, sales
+    ACCOUNT_IDS = {**ACCOUNT_IDS, **ids}
+    _loaded = True
+    _rebuild_index()
+    save_template()
+    IMPORTED_ROSTER_FILE.parent.mkdir(parents=True, exist_ok=True)
+    IMPORTED_ROSTER_FILE.write_text(
+        json.dumps({"entries": entries, "roles": {k: sorted(v) for k, v in roles.items()}},
+                   ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 # ---------------------------------------------------------------- 查询

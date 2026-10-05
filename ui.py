@@ -1700,6 +1700,62 @@ class CopyDialog(tk.Toplevel):
 
 
 # ================================================================ 名单 / 更新日志
+class RosterImportDialog(tk.Toplevel):
+    def __init__(self, master: tk.Misc, entries: list[dict[str, str]]) -> None:
+        super().__init__(master)
+        self.withdraw()
+        self.result = None
+        self.title("表1：勾选人员角色")
+        self.geometry("860x620")
+        self.transient(master)
+        self.vars = {}
+        head = tk.Frame(self, bg=CARD)
+        head.pack(fill="x", padx=14, pady=(12, 6))
+        tk.Label(head, text="导入的企业微信账号", bg=CARD, fg=FG,
+                 font=(master.font_family, config.UI_FONT_SIZE + 1, "bold")).pack(anchor="w")
+        tk.Label(head, text="每行可同时勾选运营和业务；未勾选的账号不会加入识别名单。",
+                 bg=CARD, fg=MUTED).pack(anchor="w", pady=(3, 0))
+        canvas = tk.Canvas(self, bg=CARD, highlightthickness=0)
+        canvas.pack(side="left", fill="both", expand=True, padx=(14, 0))
+        scrollbar = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
+        scrollbar.pack(side="right", fill="y", padx=(0, 14), pady=6)
+        body = tk.Frame(canvas, bg=CARD)
+        canvas.create_window((0, 0), window=body, anchor="nw")
+        body.bind("<Configure>", lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
+        for row, entry in enumerate(entries):
+            label = entry["label"]
+            tk.Label(body, text=entry["name"], width=14, anchor="w", bg=CARD, fg=FG).grid(row=row, column=0, sticky="w", padx=4, pady=2)
+            tk.Label(body, text=label, width=70, anchor="w", bg=CARD, fg=FG).grid(row=row, column=1, sticky="w", padx=4, pady=2)
+            op = tk.BooleanVar(value=entry["name"] in roster.operator_names())
+            sales = tk.BooleanVar(value=entry["name"] in roster.sales_names())
+            self.vars[label] = (op, sales)
+            tk.Checkbutton(body, text="运营", variable=op, bg=CARD, selectcolor="#ffffff").grid(row=row, column=2, padx=4)
+            tk.Checkbutton(body, text="业务", variable=sales, bg=CARD, selectcolor="#ffffff").grid(row=row, column=3, padx=4)
+        buttons = ttk.Frame(self)
+        buttons.pack(fill="x", padx=14, pady=12)
+        ttk.Button(buttons, text="取消", command=self.destroy).pack(side="right", padx=(6, 0))
+        ttk.Button(buttons, text="保存名单", style="Primary.TButton", command=self.confirm).pack(side="right")
+        self.update_idletasks()
+        self.geometry(f"+{master.winfo_rootx() + 40}+{master.winfo_rooty() + 20}")
+        self.deiconify()
+        self.grab_set()
+
+    def confirm(self) -> None:
+        roles = {}
+        for label, (op, sales) in self.vars.items():
+            selected = set()
+            if op.get():
+                selected.add("operator")
+            if sales.get():
+                selected.add("sales")
+            roles[label] = selected
+        if not any(roles.values()):
+            messagebox.showwarning("保存名单", "至少勾选一名运营或业务。", parent=self)
+            return
+        self.result = roles
+        self.destroy()
+
+
 class RosterWindow(tk.Toplevel):
     """名单管理：查运营-账号对照与业务名单，并能导出成一行一条的 CSV。"""
 
@@ -1734,6 +1790,8 @@ class RosterWindow(tk.Toplevel):
                    command=lambda: self._export("op")).pack(side="left")
         ttk.Button(bar, text="导出「业务名单」表",
                    command=lambda: self._export("sales")).pack(side="left", padx=8)
+        ttk.Button(bar, text="导入企业微信表1",
+                   command=self._import_table).pack(side="left", padx=8)
         ttk.Label(bar, text="导出格式为一行一条，可直接导入多维表格",
                   style="Hint.TLabel").pack(side="left", padx=12)
         ttk.Button(bar, text="关闭", command=self.destroy).pack(side="right")
@@ -1741,6 +1799,33 @@ class RosterWindow(tk.Toplevel):
         _center_window(self, master)
         self.deiconify()
         self.grab_set()
+
+    def _import_table(self) -> None:
+        path = filedialog.askopenfilename(
+            title="导入企业微信人员表",
+            filetypes=[("文本或 CSV", "*.txt *.csv"), ("所有文件", "*.*")],
+            initialdir=str(config.DATA_DIR), parent=self)
+        if not path:
+            return
+        try:
+            text = Path(path).read_text(encoding="utf-8-sig")
+            entries = roster.parse_contact_table(text)
+        except Exception as exc:
+            messagebox.showerror("导入失败", str(exc), parent=self)
+            return
+        if not entries:
+            messagebox.showinfo("导入名单", "没有读到有效账号。", parent=self)
+            return
+        dlg = RosterImportDialog(self, entries)
+        self.wait_window(dlg)
+        if not dlg.result:
+            return
+        try:
+            roster.apply_imported_roles(entries, dlg.result)
+            messagebox.showinfo("导入成功", f"已保存 {len(entries)} 个账号的角色设置。\n重新打开名单管理可查看。", parent=self)
+            self.destroy()
+        except Exception as exc:
+            messagebox.showerror("保存失败", str(exc), parent=self)
 
     def _make_tree(self, parent: tk.Frame, heads: tuple, rows: list,
                    widths: tuple) -> ttk.Treeview:
