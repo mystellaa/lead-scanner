@@ -13,7 +13,6 @@ $entries = @(
 )
 foreach ($entry in $entries) {
     $linkPath = Join-Path $shortcutFolder $entry.Name
-    if (Test-Path -LiteralPath $linkPath) { continue }
     $shortcut = $shortcutShell.CreateShortcut($linkPath)
     $shortcut.TargetPath = $entry.Target
     if ($entry.Name.EndsWith('.lnk')) {
