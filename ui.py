@@ -59,6 +59,7 @@ class LeadScannerApp(tk.Tk):
         self.sources: list[str] = config.load_sources()
         self.default_source: str = config.load_default_source()
         self.files: list[Path] = []
+        self.layout_var = tk.StringVar(value="群聊/评论")
         self._editor = None            # 单元格编辑时盖在上面的 Entry
         self._ctx_cell = None          # 右键点到的单元格 (iid, '#n')
         self.msg_queue: "queue.Queue[tuple]" = queue.Queue()
@@ -270,6 +271,10 @@ class LeadScannerApp(tk.Tk):
                                     command=self._start_scan)
         self.btn_start.grid(row=0, column=0, sticky="w")
 
+        ttk.Label(box, text="截图类型").grid(row=0, column=5, padx=(10, 3))
+        ttk.Combobox(box, textvariable=self.layout_var, state="readonly", width=10,
+                     values=("群聊/评论", "关注列表")).grid(row=0, column=6)
+
         # 模式开关：勾上 = 列表只看本批（线索照样写入总库）
         self.temp_var = tk.BooleanVar(value=self.temp_mode)
         self.temp_check = tk.Checkbutton(
@@ -279,11 +284,14 @@ class LeadScannerApp(tk.Tk):
             selectcolor="#ffffff", font=(self.font_family, config.UI_FONT_SIZE))
         self.temp_check.grid(row=0, column=1, padx=(12, 0), sticky="w")
 
+        ttk.Button(box, text="业务分配", command=self._assign_business).grid(
+            row=0, column=2, padx=(10, 0), sticky="w")
+
         self.progress = ttk.Progressbar(box, mode="determinate", length=150)
-        self.progress.grid(row=0, column=2, padx=10, sticky="w")
+        self.progress.grid(row=0, column=3, padx=10, sticky="w")
 
         self.stat_label = ttk.Label(box, text="", style="Stat.TLabel")
-        self.stat_label.grid(row=0, column=3, sticky="w", padx=8)
+        self.stat_label.grid(row=0, column=4, sticky="w", padx=8)
 
     # -------------------------------------------------- ④ 结果
     def _build_result_panel(self, row: int) -> None:
@@ -745,10 +753,11 @@ class LeadScannerApp(tk.Tk):
         self.btn_start.configure(state="disabled", text="识别中…")
         files = list(self.files)
 
-        self.worker = threading.Thread(target=self._scan_worker, args=(files, source), daemon=True)
+        layout = "follow_list" if self.layout_var.get() == "关注列表" else "chat"
+        self.worker = threading.Thread(target=self._scan_worker, args=(files, source, layout), daemon=True)
         self.worker.start()
 
-    def _scan_worker(self, files: list[Path], source: str) -> None:
+    def _scan_worker(self, files: list[Path], source: str, layout: str = "chat") -> None:
         """后台线程：只做 OCR + 文本提取，入库交给主线程。"""
         try:
             self.msg_queue.put(("status", "正在加载 OCR 引擎（首次运行需下载模型，请耐心等待）…"))
@@ -764,7 +773,7 @@ class LeadScannerApp(tk.Tk):
                         self.msg_queue.put(("item", i, len(files), f, [], res.error))
                         continue
                     # 带上来源平台：截图里认不出是谁发的时，用账号所属运营兜底填线索人
-                    leads = pe.extract_leads(res.full_text, source_platform=source)
+                    leads = pe.extract_leads(res.full_text, source_platform=source, layout=layout)
                     err = "" if leads else "未识别到手机号"
                     self.msg_queue.put(("item", i, len(files), f, leads, err))
                 except Exception as exc:
@@ -1315,7 +1324,8 @@ class LeadScannerApp(tk.Tk):
         用制表符分隔是刻意的：粘进飞书多维表格 / Excel / WPS 会自动分列，
         不用先导一份文件。默认**不带表头**，因为粘过去表头会占掉一行数据。
         """
-        picked = self._pick_records()
+        # A batch copy must not depend on table selection or include historical rows.
+        picked = list(self.batch_records)
         if not picked:
             messagebox.showinfo("提示", "当前表里没有可复制的线索。", parent=self)
             return
@@ -1328,11 +1338,39 @@ class LeadScannerApp(tk.Tk):
         config.save_copy_prefs(fields, False)
         if not self._copy_records(picked, fields, with_header):
             return
-        scope = "选中" if self.tree.selection() else "当前"
+        scope = "本批"
         cols = "、".join(config.CSV_HEADERS[fd] for fd in fields)
         head = "含表头" if with_header else "不含表头"
         self._set_status(
             f"已复制{scope} {len(picked)} 条（{head}：{cols}）　→ 去多维表格 Ctrl+V", "ok")
+
+    def _assign_business(self) -> None:
+        rows = self._visible_records()
+        selected = set(self._selected_indexes())
+        targets = [(i, r) for i, r in rows if (not selected or i in selected)
+                   and not (r.business or "").strip()]
+        if not targets:
+            messagebox.showinfo("业务分配", "没有待分配且负责人为空的线索。", parent=self)
+            return
+        dlg = AssignmentDialog(self, len(targets))
+        self.wait_window(dlg)
+        if not dlg.result:
+            return
+        mode, enabled = dlg.result
+        roster.save_assignment_state(mode=mode, enabled=enabled)
+        assignees = roster.assign_business(len(targets), mode=mode, commit=False)
+        if len(assignees) != len(targets):
+            messagebox.showwarning("业务分配", "没有可参与分配的业务人员。", parent=self)
+            return
+        changes = [(index, "business", roster.export_contact_labels(name, business=True))
+                   for (index, _), name in zip(targets, assignees)]
+        changed = self._write_guard(self.db.update_many, changes)
+        if changed is None:
+            return
+        if mode == "round_robin":
+            roster.commit_assignment(changed)
+        self._refresh_table()
+        self._set_status(f"已按{'轮转' if mode == 'round_robin' else '随机'}分配 {changed} 条线索", "ok")
 
     def _copy_records(self, records: list[db.LeadRecord],
                       fields: list[str], with_header: bool) -> bool:
@@ -1524,6 +1562,55 @@ class ExportDialog(tk.Toplevel):
 
 
 # ================================================================ 复制设置
+class AssignmentDialog(tk.Toplevel):
+    """Choose active salespeople and assignment strategy for this operation."""
+
+    def __init__(self, master: "LeadScannerApp", total: int) -> None:
+        super().__init__(master)
+        self.withdraw()
+        self.result = None
+        self.title("业务分配")
+        self.resizable(False, False)
+        self.transient(master)
+        state = roster.assignment_settings()
+        self.mode = tk.StringVar(value=state.get("mode", "round_robin"))
+        self.vars = {}
+        body = tk.Frame(self, bg=CARD)
+        body.pack(fill="both", expand=True, padx=18, pady=14)
+        tk.Label(body, text=f"待分配 {total} 条线索", bg=CARD, fg=FG,
+                 font=(master.font_family, config.UI_FONT_SIZE + 1, "bold")).pack(anchor="w")
+        ttk.Radiobutton(body, text="固定顺序轮转（记住上次位置）", variable=self.mode,
+                        value="round_robin").pack(anchor="w", pady=(10, 2))
+        ttk.Radiobutton(body, text="纯随机", variable=self.mode,
+                        value="random").pack(anchor="w")
+        tk.Label(body, text="勾选参与分配的业务，未勾选可用于请假或离职。",
+                 bg=CARD, fg=MUTED).pack(anchor="w", pady=(10, 4))
+        roster_box = tk.Frame(body, bg=CARD)
+        roster_box.pack(fill="x")
+        for name in roster.sales_names():
+            var = tk.BooleanVar(value=state["enabled"].get(name, True))
+            self.vars[name] = var
+            tk.Checkbutton(roster_box, text=name, variable=var, bg=CARD, fg=FG,
+                           activebackground=CARD, selectcolor="#ffffff").pack(anchor="w")
+        buttons = ttk.Frame(body)
+        buttons.pack(fill="x", pady=(12, 0))
+        ttk.Button(buttons, text="取消", command=self.destroy).pack(side="right", padx=(6, 0))
+        ttk.Button(buttons, text="开始分配", style="Primary.TButton",
+                   command=self.confirm).pack(side="right")
+        self.update_idletasks()
+        self.geometry(f"+{master.winfo_rootx() + 80}+{master.winfo_rooty() + 80}")
+        self.deiconify()
+        self.grab_set()
+
+    def confirm(self):
+        enabled = {name: var.get() for name, var in self.vars.items()}
+        if not any(enabled.values()):
+            messagebox.showwarning("业务分配", "至少勾选一名业务。", parent=self)
+            return
+        self.result = (self.mode.get(), enabled)
+        self.destroy()
+
+
 class CopyDialog(tk.Toplevel):
     """复制到剪贴板的设置：勾选要复制的列 + 是否带表头。
 
